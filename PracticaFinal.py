@@ -394,11 +394,9 @@ class VentanaPrincipal(QMainWindow):
                 self, "Reemplazar", f"No se encontró '{buscar}'")
             return
 
-        while encontrado:
             c = self.crear_editText.textCursor()
             # Inserta el reemplazo y mantiene cursor actualizado
             c.insertText(reemplazo)
-            encontrado = self.mover_cursor_a_texto(buscar, desde_inicio=False)
             self.mostrar_mensaje_temporal("Texto reemplazado correctamente")
 
     def reemplazar_todo(self):
