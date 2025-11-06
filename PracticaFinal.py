@@ -369,35 +369,30 @@ class VentanaPrincipal(QMainWindow):
         self.mostrar_mensaje_temporal("Ocurrencia anterior encontrada")
 
     def reemplazar_texto(self):
-        # Primero pedir la palabra a buscar y si n existe que se retorne la funcion
         buscar, ok = QInputDialog.getText(self, "Reemplazar", "Texto a buscar")
-
         if not ok or not buscar:
             return
 
         reemplazo, ok = QInputDialog.getText(
-            self, "Reemplazar", f"Reeemplazar  {buscar} por")
-
+            self, "Reemplazar", f"Reemplazar {buscar} por")
         if not ok:
             return
 
         pos = self.crear_editText.toPlainText().find(buscar)
         if pos == -1:
             QMessageBox.information(
-                self, "Buscar", f"No se encontro el texto {buscar}")
+                self, "Buscar", f"No se encontró el texto {buscar}")
             return
 
         encontrado = self.mover_cursor_a_texto(buscar, desde_inicio=True)
-
         if not encontrado:
             QMessageBox.information(
                 self, "Reemplazar", f"No se encontró '{buscar}'")
             return
 
-            c = self.crear_editText.textCursor()
-            # Inserta el reemplazo y mantiene cursor actualizado
-            c.insertText(reemplazo)
-            self.mostrar_mensaje_temporal("Texto reemplazado correctamente")
+        c = self.crear_editText.textCursor()
+        c.insertText(reemplazo)
+        self.mostrar_mensaje_temporal("Texto reemplazado correctamente")
 
     def reemplazar_todo(self):
         """Reemplaza todas las ocurrencias del texto buscado por el reemplazo dado."""
