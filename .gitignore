@@ -1,0 +1,21 @@
+# Entorno Python / Pipenv
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Entornos virtuales
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Ejecutables y binarios grandes
+*.exe
+*.msi
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db

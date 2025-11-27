@@ -44,6 +44,20 @@ En la carpeta del proyecto:
 python PracticaFinal.py
 ```
 
+## Empaquetado (PyInstaller + Pipenv)
+
+1. Instalar dependencias en el entorno pipenv (solo una vez):
+   ```bash
+   pipenv install
+   ```
+2. Generar el ejecutable (usa la configuración de `MiApp.spec`):
+   ```bash
+   pipenv run pyinstaller MiApp.spec
+   ```
+3. El `.exe` resultante queda en `dist/MiApp.exe`.
+
+> Recomendación: no subir `dist/` ni `build/` al repo, solo el código y los scripts de empaquetado.
+
 ## Atajos de teclado
 
 - Nuevo: Ctrl+N
