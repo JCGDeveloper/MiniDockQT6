@@ -68,6 +68,7 @@ class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Word")
+        self.setWindowIcon(QIcon("icons/favicon.ico"))
         self.setGeometry(200, 200, 600, 400)
 
         # Inicializar componentes
