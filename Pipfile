@@ -4,6 +4,8 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+speechrecognition = "*"
+pyaudio = "*"
 pyside6 = "*"
 pyinstaller = "*"
 

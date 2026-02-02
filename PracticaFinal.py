@@ -1,7 +1,66 @@
 from PySide6.QtWidgets import QMainWindow, QApplication, QTextEdit, QDockWidget, QToolBar, QMenu, QMenuBar, QStatusBar, QFileDialog, QMessageBox, QInputDialog, QFontDialog, QColorDialog, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel, QCheckBox
 import sys
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QTextCursor, QFont
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QObject
+from contadorWidget import WordCounterWidget
+
+try:
+    import speech_recognition as sr
+except ImportError:
+    sr = None
+
+
+class ReconocimientoVozWorker(QObject):
+    recognized = Signal(str)
+    error = Signal(str)
+    status = Signal(str)
+    finished = Signal()
+
+    def __init__(self, language="es-ES"):
+        super().__init__()
+        self.language = language
+
+    def start_listening(self):
+        if sr is None:
+            self.error.emit(
+                "speech_recognition no está instalado (instala SpeechRecognition y PyAudio)."
+            )
+            self.finished.emit()
+            return
+
+        # Verificar que hay micrófonos disponibles antes de abrir uno
+        mic_names = sr.Microphone.list_microphone_names()
+        if not mic_names:
+            self.error.emit("No se detectó ningún micrófono en el sistema.")
+            self.finished.emit()
+            return
+
+        recognizer = sr.Recognizer()
+
+        try:
+            with sr.Microphone() as source:
+                self.status.emit("Calibrando ruido ambiente...")
+                recognizer.adjust_for_ambient_noise(source, duration=1)
+                self.status.emit("Escuchando comando...")
+                audio = recognizer.listen(
+                    source, timeout=5, phrase_time_limit=6
+                )
+
+            texto = recognizer.recognize_google(
+                audio, language=self.language
+            )
+            # Emitimos el texto tal cual para poder transcribirlo; se convierte a minúsculas en el procesado de comandos
+            self.recognized.emit(texto)
+        except sr.WaitTimeoutError:
+            self.error.emit("No se detectó voz (tiempo agotado).")
+        except sr.UnknownValueError:
+            self.error.emit("No se entendió el audio.")
+        except sr.RequestError as e:
+            self.error.emit(f"Error con el servicio de reconocimiento: {e}")
+        except Exception as e:
+            self.error.emit(f"Error al escuchar: {e}")
+        finally:
+            self.finished.emit()
 
 
 class DockWidgetBuscarReemplazar(QWidget):
@@ -70,6 +129,7 @@ class VentanaPrincipal(QMainWindow):
         self.setWindowTitle("Word")
         self.setWindowIcon(QIcon("icons/favicon.ico"))
         self.setGeometry(200, 200, 600, 400)
+        self.voice_thread = None
 
         # Inicializar componentes
         self.crear_edit_text()
@@ -92,8 +152,21 @@ class VentanaPrincipal(QMainWindow):
     def crear_barra_de_estados(self):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Palabras:0")
-        self.crear_editText.textChanged.connect(self.contar_palabras)
+
+        # Integrar el WordCounterWidget en la barra de estado
+        self.contador_widget = WordCounterWidget(
+            wpm=200,
+            mostrarPalabras=True,
+            mostrarCaracteres=True,
+            mostrarTiempoLectura=True
+        )
+        self.status_bar.addPermanentWidget(self.contador_widget)
+
+        # Conectar la señal textChanged para actualizar el contador
+        self.crear_editText.textChanged.connect(self.actualizar_contador)
+
+        # Conectar la señal conteoActualizado del widget para posibles usos futuros
+        self.contador_widget.conteoActualizado.connect(self.on_conteo_actualizado)
 
     # CrearTextEdit
     def crear_edit_text(self):
@@ -146,6 +219,22 @@ class VentanaPrincipal(QMainWindow):
         self.resaltar_action = QAction("Resaltar Texto", self)
         self.resaltar_action.triggered.connect(self.resaltar_texto)
 
+        self.negrita_action = QAction("Negrita", self)
+        self.negrita_action.triggered.connect(self.aplicar_negrita)
+
+        self.cursiva_action = QAction("Cursiva", self)
+        self.cursiva_action.triggered.connect(self.aplicar_cursiva)
+
+        self.subrayado_action = QAction("Subrayado", self)
+        self.subrayado_action.triggered.connect(self.aplicar_subrayado)
+
+        self.reconocimiento_voz_action = QAction(
+            "Escuchar comando de voz", self
+        )
+        self.reconocimiento_voz_action.triggered.connect(
+            self.iniciar_reconocimiento_voz
+        )
+
     # Shortcuts para acciones
 
     def configurar_shortcuts(self):
@@ -163,6 +252,10 @@ class VentanaPrincipal(QMainWindow):
         self.tipografia_action.setShortcut("Ctrl+T")
         self.color_fondo_action.setShortcut("Ctrl+Shift+C")
         self.resaltar_action.setShortcut("Ctrl+H")
+        self.negrita_action.setShortcut("Ctrl+B")
+        self.cursiva_action.setShortcut("Ctrl+I")
+        self.subrayado_action.setShortcut("Ctrl+U")
+        self.reconocimiento_voz_action.setShortcut("Ctrl+Shift+M")
 
     # Crear MenuBar con acciones
 
@@ -186,9 +279,18 @@ class VentanaPrincipal(QMainWindow):
         editar_menu.addAction(self.pegar_action)
         editar_menu.addAction(self.buscar_action)
         editar_menu.addAction(self.reemplazar_action)
-        editar_menu.addAction(self.tipografia_action)
-        editar_menu.addAction(self.color_fondo_action)
-        editar_menu.addAction(self.resaltar_action)
+
+        formato_menu = menu_bar.addMenu("Formato")
+        formato_menu.addAction(self.tipografia_action)
+        formato_menu.addAction(self.color_fondo_action)
+        formato_menu.addAction(self.resaltar_action)
+        formato_menu.addSeparator()
+        formato_menu.addAction(self.negrita_action)
+        formato_menu.addAction(self.cursiva_action)
+        formato_menu.addAction(self.subrayado_action)
+
+        voz_menu = menu_bar.addMenu("Voz")
+        voz_menu.addAction(self.reconocimiento_voz_action)
 
     def crear_tool_bar(self):
         toolbar = QToolBar("Caja de herramientas")
@@ -211,6 +313,11 @@ class VentanaPrincipal(QMainWindow):
         toolbar.addAction(self.tipografia_action)
         toolbar.addAction(self.color_fondo_action)
         toolbar.addAction(self.resaltar_action)
+        toolbar.addAction(self.negrita_action)
+        toolbar.addAction(self.cursiva_action)
+        toolbar.addAction(self.subrayado_action)
+        toolbar.addSeparator()
+        toolbar.addAction(self.reconocimiento_voz_action)
 
     def crear_iconos(self):
         """Asigna iconos a todas las acciones usando iconos del sistema"""
@@ -242,6 +349,14 @@ class VentanaPrincipal(QMainWindow):
         # Icono para resaltar texto
         self.resaltar_action.setIcon(QIcon("icons/highlighter.png"))
 
+        # Iconos para formato y voz
+        self.negrita_action.setIcon(QIcon.fromTheme("format-text-bold"))
+        self.cursiva_action.setIcon(QIcon.fromTheme("format-text-italic"))
+        self.subrayado_action.setIcon(QIcon.fromTheme("format-text-underline"))
+        self.reconocimiento_voz_action.setIcon(
+            QIcon.fromTheme("audio-input-microphone")
+        )
+
     def crear_dock_buscar_reemplazar(self):
         """Crear el dock widget para buscar y reemplazar"""
         self.dock_buscar_reemplazar = QDockWidget("Buscar y Reemplazar", self)
@@ -270,10 +385,21 @@ class VentanaPrincipal(QMainWindow):
             self.dock_buscar_reemplazar.show()
             # Enfocar el campo de búsqueda
 
+    def actualizar_contador(self):
+        """Actualiza el WordCounterWidget con el texto actual del editor."""
+        texto = self.crear_editText.toPlainText()
+        self.contador_widget.update_from_text(texto)
+
+    def on_conteo_actualizado(self, palabras, caracteres):
+        """Slot que recibe la señal conteoActualizado del WordCounterWidget.
+        Puede usarse para lógica adicional basada en el conteo."""
+        # Ejemplo: mostrar información en consola para debug
+        # print(f"Conteo actualizado - Palabras: {palabras}, Caracteres: {caracteres}")
+        pass
+
     def contar_palabras(self):
-        lista_palabras = self.crear_editText.toPlainText().strip().split()
-        cantidad = len(lista_palabras)
-        self.status_bar.showMessage(f"Palabras: {cantidad}")
+        """Método legacy - ahora delega al WordCounterWidget."""
+        self.actualizar_contador()
 
     def mostrar_mensaje_temporal(self, mensaje, duracion=2000):
         """Muestra un mensaje temporal en la barra de estado y luego vuelve al contador de palabras"""
@@ -488,6 +614,103 @@ class VentanaPrincipal(QMainWindow):
             formato.setBackground(color)
             cursor.mergeCharFormat(formato)
             self.mostrar_mensaje_temporal("Texto resaltado")
+
+    def _aplicar_formato_cursor(self, cursor, formato):
+        """Aplica formato al cursor actual o a la palabra bajo el cursor."""
+        if not cursor.hasSelection():
+            cursor.select(QTextCursor.WordUnderCursor)
+        cursor.mergeCharFormat(formato)
+        self.crear_editText.mergeCurrentCharFormat(formato)
+        self.crear_editText.setTextCursor(cursor)
+
+    def aplicar_negrita(self):
+        cursor = self.crear_editText.textCursor()
+        formato = cursor.charFormat()
+        activar = formato.fontWeight() != QFont.Bold
+        formato.setFontWeight(QFont.Bold if activar else QFont.Normal)
+        self._aplicar_formato_cursor(cursor, formato)
+        mensaje = "Negrita activada" if activar else "Negrita desactivada"
+        self.mostrar_mensaje_temporal(mensaje)
+
+    def aplicar_cursiva(self):
+        cursor = self.crear_editText.textCursor()
+        formato = cursor.charFormat()
+        activar = not formato.fontItalic()
+        formato.setFontItalic(activar)
+        self._aplicar_formato_cursor(cursor, formato)
+        mensaje = "Cursiva activada" if activar else "Cursiva desactivada"
+        self.mostrar_mensaje_temporal(mensaje)
+
+    def aplicar_subrayado(self):
+        cursor = self.crear_editText.textCursor()
+        formato = cursor.charFormat()
+        activar = not formato.fontUnderline()
+        formato.setFontUnderline(activar)
+        self._aplicar_formato_cursor(cursor, formato)
+        mensaje = "Subrayado activado" if activar else "Subrayado desactivado"
+        self.mostrar_mensaje_temporal(mensaje)
+
+    def iniciar_reconocimiento_voz(self):
+        if sr is None:
+            QMessageBox.warning(
+                self,
+                "Reconocimiento de voz",
+                "speech_recognition y PyAudio no están instalados.",
+            )
+            return
+
+        if self.voice_thread and self.voice_thread.isRunning():
+            self.mostrar_mensaje_temporal("Ya se está escuchando...")
+            return
+
+        self.voice_thread = QThread()
+        self.voice_worker = ReconocimientoVozWorker()
+        self.voice_worker.moveToThread(self.voice_thread)
+
+        self.voice_thread.started.connect(self.voice_worker.start_listening)
+        self.voice_worker.recognized.connect(self.procesar_comando_voz)
+        self.voice_worker.status.connect(self.status_bar.showMessage)
+        self.voice_worker.error.connect(self.mostrar_mensaje_temporal)
+        self.voice_worker.finished.connect(self.voice_thread.quit)
+        self.voice_worker.finished.connect(self.voice_worker.deleteLater)
+        self.voice_worker.finished.connect(self.contar_palabras)
+        self.voice_thread.finished.connect(
+            lambda: setattr(self, "voice_thread", None)
+        )
+        self.voice_thread.finished.connect(self.voice_thread.deleteLater)
+
+        self.status_bar.showMessage("Activando micrófono...")
+        self.voice_thread.start()
+
+    def procesar_comando_voz(self, comando_raw):
+        comando = comando_raw.lower().strip()
+        acciones_por_comando = [
+            ("negrita", self.aplicar_negrita),
+            ("cursiva", self.aplicar_cursiva),
+            ("subrayado", self.aplicar_subrayado),
+            ("guardar archivo", self.guardar_archivo),
+            ("guardar", self.guardar_archivo),
+            ("nuevo documento", self.nuevo_archivo),
+            ("nuevo", self.nuevo_archivo),
+        ]
+
+        for texto_clave, accion in acciones_por_comando:
+            if texto_clave in comando:
+                accion()
+                self.status_bar.showMessage(f"Comando por voz: {texto_clave}")
+                return
+
+        # Si no es comando, se transcribe el texto reconocido en el cursor actual
+        texto_a_insertar = comando_raw.strip()
+        if texto_a_insertar:
+            cursor = self.crear_editText.textCursor()
+            cursor.insertText(texto_a_insertar + " ")
+            self.crear_editText.setTextCursor(cursor)
+            self.mostrar_mensaje_temporal(f"Texto dictado: {texto_a_insertar}")
+        else:
+            self.mostrar_mensaje_temporal(
+                "No se dictó texto o no se reconoció el comando"
+            )
 
     def deshacer_archivo(self):
         self.crear_editText.undo()

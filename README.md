@@ -1,108 +1,191 @@
-# MiniDockQT6
+# MiniDock QT6 - Editor de Texto
 
-# PracticaMiniDock - Editor de Texto (PySide6)
+Editor de texto desarrollado con **PySide6** que incluye funcionalidades avanzadas como reconocimiento de voz, búsqueda y reemplazo, formateo de texto y un widget contador de palabras reutilizable.
 
-## Resumen
+---
 
-Aplicación de escritorio tipo editor de texto desarrollada con PySide6. Incluye funciones básicas de edición, búsqueda y reemplazo (con dock), formato de texto y gestión de archivos.
+## 📦 Componentes
 
-## Funcionalidades principales
+### WordCounterWidget (`contadorWidget.py`)
 
-- Editor central basado en QTextEdit.
-- Crear, abrir y guardar archivos de texto (.txt).
-- Deshacer / Rehacer.
-- Cortar / Copiar / Pegar.
-- Contador de palabras en la barra de estado (actualiza dinámicamente).
-- Dock lateral "Buscar y Reemplazar" con:
-  - Buscar (posiciona en la primera coincidencia).
-  - Buscar siguiente / Buscar anterior.
-  - Reemplazar (reemplaza la coincidencia actual).
-  - Reemplazar todo (reemplaza todas las ocurrencias en el documento).
-  - Cerrar el dock.
-- Cambiar tipografía (QFontDialog).
-- Cambiar color de fondo del área de texto (QColorDialog).
-- Resaltar selección con color de fondo.
-- Atajos de teclado para acciones comunes.
-- Barra de herramientas (toolbar) con accesos rápidos e iconos.
+Widget reutilizable que muestra estadísticas del texto en tiempo real: palabras, caracteres y tiempo estimado de lectura.
 
-## Instalación y requisitos
+---
 
-- Python 3.8+
-- PySide6
+## 📡 Documentación de Señales
 
-Instalar PySide6:
+### Señal: `conteoActualizado`
 
-```bash
-pip install PySide6
+```python
+conteoActualizado = Signal(int, int)
 ```
 
-## Ejecutar la aplicación
+#### Descripción
+Señal emitida cada vez que se actualiza el conteo de palabras y caracteres en el `WordCounterWidget`.
 
-En la carpeta del proyecto:
+---
+
+### 📚 ¿Qué significa `Signal(int, int)`?
+
+En PySide6/Qt, las señales se definen con la clase `Signal` donde los **parámetros entre paréntesis indican los tipos de datos** que la señal transportará:
+
+```python
+Signal(int, int)  # Esta señal enviará DOS valores enteros
+Signal(str)       # Esta señal enviaría UN string
+Signal()          # Esta señal no envía datos (solo notifica)
+```
+
+En nuestro caso `Signal(int, int)` significa:
+- **Primer `int`**: número de palabras
+- **Segundo `int`**: número de caracteres
+
+---
+
+### 📤 ¿Cómo funciona `emit()`?
+
+El método `emit()` es la forma de **disparar/emitir una señal** para notificar a todos los slots conectados:
+
+```python
+# Definición de la señal (en la clase)
+conteoActualizado = Signal(int, int)
+
+# Emisión de la señal (en algún método)
+self.conteoActualizado.emit(palabras, caracteres)
+#                           ↑          ↑
+#                      primer int   segundo int
+```
+
+**Flujo completo:**
+1. El texto cambia en el editor
+2. Se llama a `update_from_text(texto)`
+3. Se calculan palabras y caracteres
+4. Se ejecuta `self.conteoActualizado.emit(palabras, caracteres)`
+5. Todos los slots conectados reciben esos valores
+
+```python
+# Conexión: cuando se emita la señal, ejecutar on_conteo_actualizado
+self.contador_widget.conteoActualizado.connect(self.on_conteo_actualizado)
+
+# Slot que recibe los valores emitidos
+def on_conteo_actualizado(self, palabras, caracteres):
+    print(f"Recibido: {palabras} palabras, {caracteres} caracteres")
+```
+
+---
+
+#### Parámetros de la señal
+
+| Parámetro | Tipo  | Descripción                              |
+|-----------|-------|------------------------------------------|
+| `palabras`  | `int` | Número total de palabras en el texto     |
+| `caracteres`| `int` | Número total de caracteres en el texto   |
+
+#### ¿Cuándo se emite?
+Se emite automáticamente al llamar al método `update_from_text(text)`.
+
+#### Ejemplo de uso
+
+```python
+from PySide6.QtWidgets import QApplication, QTextEdit, QVBoxLayout, QWidget
+from contadorWidget import WordCounterWidget
+
+class MiVentana(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        
+        self.editor = QTextEdit()
+        self.contador = WordCounterWidget(wpm=200)
+        
+        layout.addWidget(self.editor)
+        layout.addWidget(self.contador)
+        
+        # Conectar el cambio de texto al contador
+        self.editor.textChanged.connect(self.actualizar)
+        
+        # Conectar la señal conteoActualizado
+        self.contador.conteoActualizado.connect(self.on_conteo_actualizado)
+    
+    def actualizar(self):
+        self.contador.update_from_text(self.editor.toPlainText())
+    
+    def on_conteo_actualizado(self, palabras, caracteres):
+        print(f"📊 Palabras: {palabras} | Caracteres: {caracteres}")
+
+if __name__ == "__main__":
+    app = QApplication([])
+    ventana = MiVentana()
+    ventana.show()
+    app.exec()
+```
+
+---
+
+## 🔧 API del WordCounterWidget
+
+### Constructor
+
+```python
+WordCounterWidget(wpm=200, mostrarPalabras=True, mostrarCaracteres=True, mostrarTiempoLectura=True, parent=None)
+```
+
+| Parámetro           | Tipo   | Default | Descripción                                      |
+|---------------------|--------|---------|--------------------------------------------------|
+| `wpm`               | `int`  | `200`   | Palabras por minuto para calcular tiempo lectura |
+| `mostrarPalabras`   | `bool` | `True`  | Mostrar/ocultar el label de palabras             |
+| `mostrarCaracteres` | `bool` | `True`  | Mostrar/ocultar el label de caracteres           |
+| `mostrarTiempoLectura`| `bool`| `True`  | Mostrar/ocultar el label de tiempo de lectura    |
+| `parent`            | `QWidget`| `None`| Widget padre                                     |
+
+### Métodos
+
+#### `update_from_text(text: str)`
+Actualiza los contadores con el texto proporcionado y emite la señal `conteoActualizado`.
+
+```python
+contador.update_from_text("Hola mundo, esto es un ejemplo.")
+# Actualiza: Palabras: 6, Caracteres: 31
+# Emite: conteoActualizado(6, 31)
+```
+
+---
+
+## 🎤 Otras Señales en el Proyecto
+
+### ReconocimientoVozWorker
+
+| Señal       | Parámetros | Descripción                                        |
+|-------------|------------|----------------------------------------------------|
+| `recognized`| `str`      | Texto reconocido por el micrófono                  |
+| `error`     | `str`      | Mensaje de error si falla el reconocimiento        |
+| `status`    | `str`      | Estado actual del proceso (calibrando, escuchando) |
+| `finished`  | —          | Indica que el proceso de escucha ha terminado      |
+
+---
+
+## 🚀 Ejecución
 
 ```bash
 python PracticaFinal.py
 ```
 
-## Empaquetado (PyInstaller + Pipenv)
+### Dependencias
+- `PySide6`
+- `SpeechRecognition` (opcional, para reconocimiento de voz)
+- `PyAudio` (opcional, para reconocimiento de voz)
 
-1. Instalar dependencias en el entorno pipenv (solo una vez):
-   ```bash
-   pipenv install
-   ```
-2. Generar el ejecutable (usa la configuración de `MiApp.spec`):
-   ```bash
-   pipenv run pyinstaller MiApp.spec
-   ```
-3. El `.exe` resultante queda en `dist/MiApp.exe`.
+```bash
+pip install PySide6 SpeechRecognition PyAudio
+```
 
-> Recomendación: no subir `dist/` ni `build/` al repo, solo el código y los scripts de empaquetado.
+---
 
-## Atajos de teclado
+## 📁 Estructura del Proyecto
 
-- Nuevo: Ctrl+N
-- Abrir: Ctrl+O
-- Guardar: Ctrl+S
-- Salir: Ctrl+Q
-- Deshacer: Ctrl+Z
-- Rehacer: Ctrl+Y
-- Copiar: Ctrl+C
-- Cortar: Ctrl+X
-- Pegar: Ctrl+V
-- Tipografía: Ctrl+T
-- Color de fondo: Ctrl+Shift+C
-- Resaltar: Ctrl+H
-
-## Detalles de uso
-
-- Búsqueda y reemplazo:
-  - "Buscar" solicita el texto y posiciona el cursor en la primera coincidencia.
-  - "Buscar siguiente" y "Buscar anterior" usan el último término buscado (si no existe, piden uno).
-  - "Reemplazar" solicita término y reemplazo, y sustituye la coincidencia actualmente seleccionada/posicionada.
-  - "Reemplazar todo" reemplaza todas las ocurrencias en el documento (se realiza sobre texto plano).
-- Resaltar conserva formato del documento usando charFormat y background.
-- Contador de palabras cuenta palabras separadas por espacios y muestra el total en la barra de estado.
-
-## Limitaciones conocidas y notas
-
-- Reemplazar todo usa `setPlainText(...)` — esto elimina formato si el documento tuviera estilos ricos. Si es necesario preservar formato, usar QTextCursor para reemplazos.
-- El dock usa QInputDialog para pedir términos; mejorar UX añadiendo QLineEdit dentro del dock es recomendado.
-- `QIcon.fromTheme(...)` puede devolver iconos vacíos en sistemas sin esos temas; el proyecto incluye algunos iconos en `icons/` como fallback.
-- El método de cierre del dock asume jerarquía de widgets; se puede robustecer buscando el ancestro QDockWidget.
-- Mensajes temporales usados en barra de estado manejan un QTimer; evitar múltiples conexiones al timer (se recomienda usar `QTimer.singleShot`).
-
-## Estructura de archivos
-
-- PracticaFinal.py — código principal (VentanaPrincipal, DockWidgetBuscarReemplazar).
-- icons/ — carpeta opcional con iconos locales usados como fallback.
-
-## Contribuciones y mejoras sugeridas
-
-- Añadir campos de búsqueda y reemplazo directamente en el dock para eliminar diálogos modales.
-- Implementar búsqueda sensible a mayúsculas/minúsculas y soporte regex.
-- Preservar formato al reemplazar (usar QTextCursor).
-- Guardar/restaurar posición y estado del dock (QSettings).
-
-## Licencia
-
-Proyecto educativo — usar y modificar libremente para prácticas y aprendizaje.
+```
+MiniDockQT6/
+├── PracticaFinal.py      # Aplicación principal
+├── contadorWidget.py     # Widget contador de palabras
+├── README.md             # Esta documentación
+└── icons/                # Iconos de la aplicación
+```
